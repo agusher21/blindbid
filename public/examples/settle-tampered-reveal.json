@@ -1,0 +1,68 @@
+{
+  "ticket": {
+    "auction": {
+      "auctionId": "demo-auction-closed-001",
+      "item": "Rare VFY Art #1 (closed)",
+      "minBid": 100,
+      "maxBid": 1000,
+      "closeAt": 1577836800000
+    },
+    "signature": "538548d739fef6453d9a9f7f6309642fe659c007c0c156050453f18333d238e5"
+  },
+  "reveals": [
+    {
+      "bidReceipt": {
+        "auctionId": "demo-auction-closed-001",
+        "bidder": "alice",
+        "commitment": "8484248555334419206114235833484269937060675722096139228833488434578173407393",
+        "bidAt": 1559347200000,
+        "signature": "65a4d1fdb9b39a81c48b4f76e43a466e5de234c062f65fa00940c3422768f0d1"
+      },
+      "revealReceipt": {
+        "auctionId": "demo-auction-closed-001",
+        "bidder": "alice",
+        "bid": 750,
+        "commitment": "8484248555334419206114235833484269937060675722096139228833488434578173407393",
+        "signature": "c82bbb01ac6e5fe874fa67275b5ecb34c25c7cb13f73a99066c3ffe527bbfcc9"
+      },
+      "bid": 750,
+      "salt": 12345
+    },
+    {
+      "bidReceipt": {
+        "auctionId": "demo-auction-closed-001",
+        "bidder": "bob",
+        "commitment": "10440908282971454983240814932866401508177657127174160673199762626046205929029",
+        "bidAt": 1559347200000,
+        "signature": "12cc5d7e1e963ed7aa93b8679a8ff7c85b0313e2bb07cd8afbec99f4aae5a12c"
+      },
+      "revealReceipt": {
+        "auctionId": "demo-auction-closed-001",
+        "bidder": "bob",
+        "bid": 920,
+        "commitment": "10440908282971454983240814932866401508177657127174160673199762626046205929029",
+        "signature": "de0c786ff926e3915ef10d0f67ab8e805c18e7ff58f77f31d68af5da52699d16"
+      },
+      "bid": 950,
+      "salt": 777
+    },
+    {
+      "bidReceipt": {
+        "auctionId": "demo-auction-closed-001",
+        "bidder": "carol",
+        "commitment": "19955433468112748698409119635953241403067348532792799997555644330140413961361",
+        "bidAt": 1559347200000,
+        "signature": "2f514d3e945ace24b07882524cb2f7a31caf4a0efd9e806cd4bfafbce533e31a"
+      },
+      "revealReceipt": {
+        "auctionId": "demo-auction-closed-001",
+        "bidder": "carol",
+        "bid": 610,
+        "commitment": "19955433468112748698409119635953241403067348532792799997555644330140413961361",
+        "signature": "64f24a000124e2018c82b23e0c8fa2cea06df91c191848ef8ad912622826dc41"
+      },
+      "bid": 610,
+      "salt": 424242
+    }
+  ]
+}

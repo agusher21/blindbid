@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BlindBid — Sealed-Bid Auction Agent</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 880px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+  h1 { margin-bottom: 0.2rem; }
+  .sub { color: #555; margin-top: 0; }
+  .pill { display: inline-block; background: #eef; border: 1px solid #aac; border-radius: 999px; padding: 0.15rem 0.7rem; font-size: 0.85rem; margin: 0.2rem 0.2rem 0.2rem 0; }
+  code { background: #f2f2f2; padding: 0.1rem 0.35rem; border-radius: 4px; word-break: break-all; }
+  pre { background: #111; color: #ddd; padding: 1rem; border-radius: 8px; overflow: auto; font-size: 0.85rem; white-space: pre-wrap; word-break: break-word; }
+  button { padding: 0.5rem 1rem; margin: 0.25rem 0.25rem 0.25rem 0; cursor: pointer; }
+  button.primary { background: #1a1a1a; color: #fff; border: none; border-radius: 6px; font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  td, th { border: 1px solid #ddd; padding: 0.5rem; text-align: left; font-size: 0.9rem; }
+  .accept { color: #0a7a1e; font-weight: 700; }
+  .reject { color: #b00020; font-weight: 700; }
+  .muted { color: #666; font-size: 0.9rem; }
+  textarea { width: 100%; min-height: 140px; font-family: monospace; }
+  select { padding: 0.4rem; }
+  #countdown { font-size: 1.2rem; font-weight: 700; }
+  .step { border-left: 3px solid #1a1a1a; padding-left: 0.75rem; margin: 0.75rem 0; }
+</style>
+</head>
+<body>
+<h1>🔒 BlindBid — Sealed-Bid Auction Agent</h1>
+<p class="sub">A sealed-bid first-price auction agent for <strong>Agent Games</strong> (zkVerify), Wildcard track. Bidders commit to a hidden bid with a Groth16 proof that it is in range — the agent never sees a bid before the reveal, then settles the winner.</p>
+<p>
+  <span class="pill" id="vk-pill">loading circuit info…</span>
+  <span class="pill">Groth16 / BN128</span>
+  <span class="pill">Circom 2.2.3</span>
+</p>
+
+<h2>How it works</h2>
+<ol>
+  <li><strong>Create</strong> — the agent signs the auction config (item, min/max bid, close time) into a ticket.</li>
+  <li><strong>Bid</strong> — a bidder sends a <code>commitment = Poseidon(bid, salt)</code> plus a Groth16 proof that the hidden bid is inside <code>[minBid, maxBid]</code>. The agent verifies the proof and returns a signed bid receipt. The bid itself never leaves the bidder.</li>
+  <li><strong>Reveal</strong> — after the close time, each bidder reveals <code>(bid, salt)</code> with their receipt. The agent recomputes the commitment and requires an exact match.</li>
+  <li><strong>Settle</strong> — the agent re-verifies every reveal, rejects duplicate bidders, and signs the winner: the highest revealed bid.</li>
+</ol>
+<p class="muted">The agent is stateless: every step is carried by a signed receipt, so it runs on serverless (Vercel) with no database. One bid per bidder is enforced at settlement, where all reveals are visible. The demo bids below are public by design so anyone can run the demo — a real bidder generates their own proof with <code>scripts/prove.js</code> and keeps <code>bid</code> + <code>salt</code> secret until the reveal.</p>
+
+<h2>▶ Run a full auction</h2>
+<p><button class="primary" id="run-auction">Run full auction (3 sealed bids → close → reveal → settle)</button></p>
+<div id="auction-log"></div>
+
+<h2>Single-shot examples</h2>
+<p class="muted">Each button sends one canned payload to the live endpoint and shows the verdict.</p>
+<table>
+  <thead><tr><th>Example</th><th>Endpoint</th><th>What is tampered</th><th>Expected</th><th></th></tr></thead>
+  <tbody id="examples"></tbody>
+</table>
+
+<h2>Try your own payload</h2>
+<p>
+  <select id="custom-endpoint">
+    <option value="/api/bid">POST /api/bid</option>
+    <option value="/api/reveal">POST /api/reveal</option>
+    <option value="/api/settle">POST /api/settle</option>
+    <option value="/api/auction">POST /api/auction (create)</option>
+  </select>
+  <button id="send-custom">Send</button>
+  <button id="load-valid">Load valid bid</button>
+</p>
+<textarea id="custom" spellcheck="false" placeholder='{"ticket": ..., "bidder": "alice", "commitment": "...", "proof": {...}, "publicSignals": [...]}'></textarea>
+
+<h2>Result</h2>
+<p>Verdict: <span id="verdict">—</span></p>
+<p id="reason"></p>
+<pre id="result">No request sent yet.</pre>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const short = (s) => (typeof s === "string" && s.length > 18 ? s.slice(0, 10) + "…" + s.slice(-6) : s);
+
+async function post(path, body) {
+  const t0 = performance.now();
+  const res = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const json = await res.json();
+  return { json, ms: Math.round(performance.now() - t0), status: res.status };
+}
+
+function show(json, ms, status) {
+  const v = $("verdict");
+  const decision = json.decision || json.winner ? (json.winner ? "ACCEPT (settled)" : json.decision) : "—";
+  v.textContent = decision + (json.winner ? ` — winner ${json.winner} @ ${json.winningBid}` : "");
+  v.className = json.decision === "ACCEPT" || json.winner ? "accept" : "reject";
+  $("reason").textContent = (json.reason || "") + ` (HTTP ${status}, ${ms} ms)`;
+  $("result").textContent = JSON.stringify(json, null, 2);
+}
+
+async function loadExample(name) {
+  const res = await fetch("/examples/" + name);
+  return res.json();
+}
+
+const EXAMPLES = [
+  ["bid-valid.json", "/api/bid", "nothing — real proof, bid 750 in [100, 1000]", "ACCEPT"],
+  ["bid-out-of-range.json", "/api/bid", "proof says inRange=0 (bid 1500 > max 1000)", "REJECT"],
+  ["bid-tampered-commitment.json", "/api/bid", "claimed commitment ≠ proven commitment", "REJECT"],
+  ["bid-vk-substitution.json", "/api/bid", "proof made with a different proving key", "REJECT"],
+  ["bid-fake-proof.json", "/api/bid", "random proof values", "REJECT"],
+  ["bid-after-close.json", "/api/bid", "valid proof, but the auction already closed", "REJECT"],
+  ["reveal-valid.json", "/api/reveal", "nothing — correct bid + salt", "ACCEPT"],
+  ["reveal-wrong-salt.json", "/api/reveal", "wrong salt — commitment mismatch", "REJECT"],
+  ["reveal-before-close.json", "/api/reveal", "valid receipt, but the auction is still open", "REJECT"],
+  ["settle-valid.json", "/api/settle", "nothing — 3 valid reveals", "ACCEPT (bob 920)"],
+  ["settle-duplicate-bidder.json", "/api/settle", "same bidder twice", "REJECT"],
+  ["settle-tampered-reveal.json", "/api/settle", "bob reveals 950 instead of his committed 920", "REJECT"],
+];
+
+const tbody = $("examples");
+for (const [name, endpoint, what, expected] of EXAMPLES) {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td><code>${name}</code></td><td><code>${endpoint}</code></td><td>${what}</td><td>${expected}</td>`;
+  const td = document.createElement("td");
+  const btn = document.createElement("button");
+  btn.textContent = "Send";
+  btn.onclick = async () => {
+    btn.disabled = true;
+    try {
+      const payload = await loadExample(name);
+      const { json, ms, status } = await post(endpoint, payload);
+      show(json, ms, status);
+    } catch (err) {
+      $("result").textContent = "Error: " + err.message;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+  td.appendChild(btn);
+  tr.appendChild(td);
+  tbody.appendChild(tr);
+}
+
+$("load-valid").onclick = async () => {
+  $("custom").value = JSON.stringify(await loadExample("bid-valid.json"), null, 2);
+};
+$("send-custom").onclick = async () => {
+  try {
+    const body = JSON.parse($("custom").value);
+    const { json, ms, status } = await post($("custom-endpoint").value, body);
+    show(json, ms, status);
+  } catch (err) {
+    $("result").textContent = "Error: " + err.message;
+  }
+};
+
+// ---- Full auction run ----
+$("run-auction").onclick = async () => {
+  const log = $("auction-log");
+  log.innerHTML = "";
+  const btn = $("run-auction");
+  btn.disabled = true;
+  const step = (html) => {
+    const div = document.createElement("div");
+    div.className = "step";
+    div.innerHTML = html;
+    log.appendChild(div);
+    return div;
+  };
+  try {
+    const closeAt = Date.now() + 45000;
+    const auction = { auctionId: "demo-live-" + Date.now(), item: "Rare VFY Art #1", minBid: 100, maxBid: 1000, closeAt };
+    const created = await post("/api/auction", auction);
+    if (created.json.decision !== "ACCEPT") throw new Error("create failed: " + created.json.reason);
+    const ticket = created.json.ticket;
+    step(`<strong>1. Auction created</strong> — “${auction.item}”, bids in [100, 1000], closes at ${new Date(closeAt).toLocaleTimeString()}. Ticket signature <code>${short(ticket.signature)}</code>.`);
+
+    const demoBids = await (await fetch("/examples/demo-bids.json")).json();
+    const receipts = {};
+    const bidDiv = step("<strong>2. Sealed bids</strong> — commitments only, amounts hidden:");
+    for (const d of demoBids.bids) {
+      const { json } = await post("/api/bid", { ticket, bidder: d.bidder, commitment: d.commitment, proof: d.proof, publicSignals: d.publicSignals });
+      if (json.decision !== "ACCEPT") throw new Error(`bid for ${d.bidder} rejected: ${json.reason}`);
+      receipts[d.bidder] = json.receipt;
+      bidDiv.innerHTML += `<br>• ${d.bidder}: commitment <code>${short(d.commitment)}</code> — ACCEPT, receipt <code>${short(json.receipt.signature)}</code>`;
+    }
+
+    const cd = step(`<strong>3. Waiting for the close…</strong> <span id="countdown"></span>`);
+    await new Promise((resolve) => {
+      const iv = setInterval(() => {
+        const left = Math.max(0, Math.ceil((closeAt - Date.now()) / 1000));
+        const el = document.getElementById("countdown");
+        if (el) el.textContent = left + "s left";
+        if (left <= 0) { clearInterval(iv); resolve(); }
+      }, 250);
+    });
+    cd.innerHTML = "<strong>3. Auction closed.</strong> No more bids accepted.";
+
+    const revDiv = step("<strong>4. Reveals</strong> — bids are now public:");
+    const reveals = [];
+    for (const d of demoBids.bids) {
+      const { json } = await post("/api/reveal", { ticket, bidReceipt: receipts[d.bidder], bid: d.bid, salt: d.salt });
+      if (json.decision !== "ACCEPT") throw new Error(`reveal for ${d.bidder} rejected: ${json.reason}`);
+      reveals.push({ bidReceipt: receipts[d.bidder], revealReceipt: json.receipt, bid: d.bid, salt: d.salt });
+      revDiv.innerHTML += `<br>• ${d.bidder} reveals <strong>${d.bid}</strong> (salt ${d.salt}) — commitment matches, ACCEPT`;
+    }
+
+    const { json } = await post("/api/settle", { ticket, reveals });
+    if (json.decision !== "ACCEPT") throw new Error("settle failed: " + json.reason);
+    step(`<strong>5. Settled 🏆</strong> — winner <strong>${json.winner}</strong> with bid <strong>${json.winningBid}</strong>. Ranking: ${json.ranking.map((r) => `${r.bidder} ${r.bid}`).join(" &gt; ")}. Settlement signature <code>${short(json.settlement.signature)}</code>.`);
+    show(json, 0, 200);
+  } catch (err) {
+    step(`<strong>Error:</strong> ${err.message}`);
+    $("result").textContent = "Error: " + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+// Circuit info pill.
+fetch("/api/circuit-info").then((r) => r.json()).then((info) => {
+  $("vk-pill").textContent = "vk sha256: " + info.vkFingerprintSha256.slice(0, 16) + "…";
+}).catch(() => { $("vk-pill").textContent = "circuit info unavailable"; });
+</script>
+</body>
+</html>

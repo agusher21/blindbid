@@ -1,0 +1,21 @@
+{
+  "ticket": {
+    "auction": {
+      "auctionId": "demo-auction-closed-001",
+      "item": "Rare VFY Art #1 (closed)",
+      "minBid": 100,
+      "maxBid": 1000,
+      "closeAt": 1577836800000
+    },
+    "signature": "538548d739fef6453d9a9f7f6309642fe659c007c0c156050453f18333d238e5"
+  },
+  "bidReceipt": {
+    "auctionId": "demo-auction-closed-001",
+    "bidder": "alice",
+    "commitment": "8484248555334419206114235833484269937060675722096139228833488434578173407393",
+    "bidAt": 1559347200000,
+    "signature": "65a4d1fdb9b39a81c48b4f76e43a466e5de234c062f65fa00940c3422768f0d1"
+  },
+  "bid": 750,
+  "salt": 99999
+}
